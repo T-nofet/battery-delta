@@ -3,17 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Delta Charge PoC - Full Feature</title>
+    <title>Delta Charge Pro</title>
+    
+    <!-- הגדרות להפיכת הדף לאפליקציית מסך בית (PWA) -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#0d1117">
+
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             background-color: #0d1117;
             color: #ffffff;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
             padding: 20px;
             box-sizing: border-box;
@@ -85,7 +92,7 @@
             margin-top: 15px;
             padding-top: 15px;
             border-top: 1px dashed #30363d;
-            display: none; /* יופיע רק בטעינה */
+            display: none;
         }
 
         .stat-item {
@@ -115,6 +122,51 @@
             border-top: 1px solid #21262d;
             padding-top: 15px;
         }
+
+        /* סגנון כפתור וטבלת היסטוריה */
+        .history-btn {
+            background-color: #21262d;
+            color: #c9d1d9;
+            border: 1px solid #30363d;
+            padding: 10px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            margin-top: 15px;
+            width: 100%;
+            transition: background 0.2s;
+        }
+
+        .history-btn:hover {
+            background-color: #30363d;
+        }
+
+        .history-section {
+            display: none;
+            margin-top: 15px;
+            max-height: 150px;
+            overflow-y: auto;
+            border-top: 1px solid #30363d;
+            padding-top: 10px;
+        }
+
+        .history-table {
+            width: 100%;
+            font-size: 0.8rem;
+            border-collapse: collapse;
+            text-align: right;
+        }
+
+        .history-table th {
+            color: #8b949e;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #30363d;
+        }
+
+        .history-table td {
+            padding: 6px 0;
+            border-bottom: 1px solid #21262d;
+        }
     </style>
 </head>
 <body>
@@ -129,7 +181,6 @@
             <div id="deltaLabel" class="delta-label">נוספו מאז החיבור</div>
         </div>
 
-        <!-- הנתונים החדשים: זמן וקצב צריכה -->
         <div id="statsGrid" class="stats-grid">
             <div class="stat-item">
                 <div id="timerVal" class="stat-val">00:00</div>
@@ -144,12 +195,94 @@
         <div class="info-text" id="infoText">
             חבר את המטען כדי להתחיל מדידה מלאה.
         </div>
+
+        <!-- כפתור ואזור היסטוריה מוסתר -->
+        <button class="history-btn" id="toggleHistoryBtn" onclick="toggleHistory()">📋 הצג היסטוריית טעינות</button>
+        <div class="history-section" id="historySection">
+            <table class="history-table">
+                <thead>
+                    <tr>
+                        <th>זמן</th>
+                        <th>דלתא</th>
+                        <th>משך</th>
+                    </tr>
+                </thead>
+                <tbody id="historyRows">
+                    <!-- שורות ההיסטוריה יוזרקו כאן -->
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <script>
         let initialChargeLevel = null;
         let startTime = null;
         let timerInterval = null;
+        let lastNotifiedDelta = 0; // מעקב אחרי התראות ה-10%
+
+        // פונקציה להשמעת צליל ביפ דיגיטלי מובנה
+        function playBeep() {
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // צליל גבוה ונקי
+                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime); // ווליום עדין
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.15); // אורך הצליל: 150 מילישניות
+            } catch (e) {
+                console.log("Audio not allowed yet");
+            }
+        }
+
+        // ניהול שמירה והצגה של היסטוריה ב-LocalStorage
+        function saveChargeToHistory(delta, durationStr) {
+            if (delta <= 0) return; // לא שומרים טעינות ריקות
+            let history = JSON.parse(localStorage.getItem('chargeHistory')) || [];
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('he-IL', {hour: '2-digit', minute:'2-digit'});
+            
+            history.unshift({ time: timeStr, delta: `+${delta}%`, duration: durationStr });
+            if (history.length > 20) history.pop(); // שומרים עד 20 רשומות אחרונות
+            
+            localStorage.setItem('chargeHistory', JSON.stringify(history));
+            renderHistory();
+        }
+
+        function renderHistory() {
+            const history = JSON.parse(localStorage.getItem('chargeHistory')) || [];
+            const tbody = document.getElementById('historyRows');
+            if (history.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:#8b949e;">אין טעינות מוקלטות עדיין</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = history.map(item => `
+                <tr>
+                    <td>${item.time}</td>
+                    <td style="color:#3fb950; font-weight:bold;">${item.delta}</td>
+                    <td>${item.duration}</td>
+                </tr>
+            `).join('');
+        }
+
+        function toggleHistory() {
+            const section = document.getElementById('historySection');
+            const btn = document.getElementById('toggleHistoryBtn');
+            if (section.style.display === 'block') {
+                section.style.display = 'none';
+                btn.textContent = "📋 הצג היסטוריית טעינות";
+            } else {
+                section.style.display = 'block';
+                btn.textContent = "❌ סגור היסטוריה";
+                renderHistory();
+            }
+        }
 
         if ('getBattery' in navigator) {
             navigator.getBattery().then(function(battery) {
@@ -157,27 +290,32 @@
                 function updateTimer() {
                     if (!startTime) return;
                     const now = new Date();
-                    const diffTime = Math.abs(now - startTime); // במילשניות
+                    const diffTime = Math.abs(now - startTime);
                     
                     const minutes = Math.floor(diffTime / 60000);
                     const seconds = Math.floor((diffTime % 60000) / 1000);
                     
-                    // פורמט יפה עם אפסים מובילים
                     const displayMins = minutes < 10 ? '0' + minutes : minutes;
                     const displaySecs = seconds < 10 ? '0' + seconds : seconds;
+                    const durationStr = `${displayMins}:${displaySecs}`;
                     
-                    document.getElementById('timerVal').textContent = `${displayMins}:${displaySecs}`;
+                    document.getElementById('timerVal').textContent = durationStr;
 
-                    // חישוב קצב צריכה (אחוזים לדקה)
                     const currentPct = Math.round(battery.level * 100);
                     const delta = currentPct - initialChargeLevel;
                     const totalMinutes = diffTime / 60000;
 
+                    // חישוב קצב
                     if (totalMinutes > 0 && delta > 0) {
-                        const rate = (delta / totalMinutes).toFixed(2);
-                        document.getElementById('rateVal').textContent = rate;
+                        document.getElementById('rateVal').textContent = (delta / totalMinutes).toFixed(2);
                     } else {
                         document.getElementById('rateVal').textContent = "0.00";
+                    }
+
+                    // בדיקת התראת קול כל 10% דלתא
+                    if (delta > 0 && delta % 10 === 0 && delta !== lastNotifiedDelta) {
+                        playBeep();
+                        lastNotifiedDelta = delta; // מונע השמעה חוזרת באותו אחוז
                     }
                 }
 
@@ -198,19 +336,24 @@
                         if (initialChargeLevel === null) {
                             initialChargeLevel = currentPct;
                             startTime = new Date();
-                            // הפעלת הטיימר שירוץ כל שנייה
+                            lastNotifiedDelta = 0;
                             timerInterval = setInterval(updateTimer, 1000);
                         }
 
                         const delta = currentPct - initialChargeLevel;
-                        
                         deltaValue.textContent = `+${delta}%`;
                         deltaValue.style.display = 'block';
                         deltaLabel.style.display = 'block';
                         statsGrid.style.display = 'grid';
                         infoText.innerHTML = `הטעינה החלה ב-<strong>${initialChargeLevel}%</strong>.`;
                     } else {
-                        // ניתוק המטען - ניקוי ואיפוס מוחלט
+                        // ניתוק מטען - שומרים להיסטוריה לפני האיפוס
+                        if (initialChargeLevel !== null) {
+                            const finalDelta = currentPct - initialChargeLevel;
+                            const finalDuration = document.getElementById('timerVal').textContent;
+                            saveChargeToHistory(finalDelta, finalDuration);
+                        }
+
                         badge.textContent = "🔋 לא מחובר";
                         badge.classList.remove('charging');
                         
@@ -229,6 +372,7 @@
                 }
 
                 updateUI();
+                renderHistory(); // טעינת היסטוריה קיימת בטעינת העמוד
 
                 battery.addEventListener('chargingchange', updateUI);
                 battery.addEventListener('levelchange', updateUI);
