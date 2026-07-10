@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Delta Charge PoC</title>
+    <title>Delta Charge PoC - Full Feature</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -23,7 +23,7 @@
             background-color: #161b22;
             border: 2px solid #30363d;
             border-radius: 24px;
-            padding: 40px 20px;
+            padding: 30px 20px;
             text-align: center;
             width: 100%;
             max-width: 340px;
@@ -36,7 +36,7 @@
             border-radius: 20px;
             font-size: 0.9rem;
             font-weight: 600;
-            margin-bottom: 30px;
+            margin-bottom: 20px;
             background-color: #21262d;
             color: #8b949e;
             transition: all 0.3s ease;
@@ -49,22 +49,23 @@
         }
 
         .current-charge {
-            font-size: 5.5rem;
+            font-size: 5rem;
             font-weight: 800;
             line-height: 1;
             margin-bottom: 10px;
         }
 
         .delta-box {
-            min-height: 80px;
+            min-height: 70px;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
+            margin-bottom: 15px;
         }
 
         .delta-value {
-            font-size: 2.2rem;
+            font-size: 2.5rem;
             font-weight: 700;
             color: #3fb950;
             display: none;
@@ -73,17 +74,46 @@
         .delta-label {
             font-size: 0.85rem;
             color: #8b949e;
-            margin-top: 4px;
+            margin-top: 2px;
             display: none;
         }
 
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px dashed #30363d;
+            display: none; /* יופיע רק בטעינה */
+        }
+
+        .stat-item {
+            background-color: #21262d;
+            padding: 10px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat-val {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #58a6ff;
+        }
+
+        .stat-lbl {
+            font-size: 0.75rem;
+            color: #8b949e;
+            margin-top: 4px;
+        }
+
         .info-text {
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             color: #8b949e;
             line-height: 1.4;
             margin-top: 20px;
             border-top: 1px solid #21262d;
-            padding-top: 20px;
+            padding-top: 15px;
         }
     </style>
 </head>
@@ -96,22 +126,61 @@
         
         <div class="delta-box">
             <div id="deltaValue" class="delta-value">+0%</div>
-            <div id="deltaLabel" class="delta-label">נוספו מאז תחילת הטעינה</div>
+            <div id="deltaLabel" class="delta-label">נוספו מאז החיבור</div>
+        </div>
+
+        <!-- הנתונים החדשים: זמן וקצב צריכה -->
+        <div id="statsGrid" class="stats-grid">
+            <div class="stat-item">
+                <div id="timerVal" class="stat-val">00:00</div>
+                <div class="stat-lbl">זמן טעינה</div>
+            </div>
+            <div class="stat-item">
+                <div id="rateVal" class="stat-val">0.00</div>
+                <div class="stat-lbl">קצב (% לדקה)</div>
+            </div>
         </div>
 
         <div class="info-text" id="infoText">
-            חבר את המטען כדי לראות את ה-Delta בלייב.
+            חבר את המטען כדי להתחיל מדידה מלאה.
         </div>
     </div>
 
     <script>
-        // משתנה שישמור את אחוז הסוללה ברגע המדויק של חיבור המטען
         let initialChargeLevel = null;
+        let startTime = null;
+        let timerInterval = null;
 
         if ('getBattery' in navigator) {
             navigator.getBattery().then(function(battery) {
                 
-                // פונקציה שמעדכנת את תצוגת המסך בכל שינוי
+                function updateTimer() {
+                    if (!startTime) return;
+                    const now = new Date();
+                    const diffTime = Math.abs(now - startTime); // במילשניות
+                    
+                    const minutes = Math.floor(diffTime / 60000);
+                    const seconds = Math.floor((diffTime % 60000) / 1000);
+                    
+                    // פורמט יפה עם אפסים מובילים
+                    const displayMins = minutes < 10 ? '0' + minutes : minutes;
+                    const displaySecs = seconds < 10 ? '0' + seconds : seconds;
+                    
+                    document.getElementById('timerVal').textContent = `${displayMins}:${displaySecs}`;
+
+                    // חישוב קצב צריכה (אחוזים לדקה)
+                    const currentPct = Math.round(battery.level * 100);
+                    const delta = currentPct - initialChargeLevel;
+                    const totalMinutes = diffTime / 60000;
+
+                    if (totalMinutes > 0 && delta > 0) {
+                        const rate = (delta / totalMinutes).toFixed(2);
+                        document.getElementById('rateVal').textContent = rate;
+                    } else {
+                        document.getElementById('rateVal').textContent = "0.00";
+                    }
+                }
+
                 function updateUI() {
                     const currentPct = Math.round(battery.level * 100);
                     document.getElementById('currentPct').textContent = currentPct;
@@ -119,45 +188,53 @@
                     const badge = document.getElementById('statusBadge');
                     const deltaValue = document.getElementById('deltaValue');
                     const deltaLabel = document.getElementById('deltaLabel');
+                    const statsGrid = document.getElementById('statsGrid');
                     const infoText = document.getElementById('infoText');
 
                     if (battery.charging) {
                         badge.textContent = "⚡ בטעינה";
                         badge.classList.add('charging');
 
-                        // אם המטען הרגע חובר ועדיין לא נעלנו אחוז התחלתי
                         if (initialChargeLevel === null) {
                             initialChargeLevel = currentPct;
+                            startTime = new Date();
+                            // הפעלת הטיימר שירוץ כל שנייה
+                            timerInterval = setInterval(updateTimer, 1000);
                         }
 
-                        // חישוב ההפרש (ה-Delta)
                         const delta = currentPct - initialChargeLevel;
                         
                         deltaValue.textContent = `+${delta}%`;
                         deltaValue.style.display = 'block';
                         deltaLabel.style.display = 'block';
-                        infoText.innerHTML = `הטעינה החלה ב-<strong>${initialChargeLevel}%</strong>.<br>נעלנו את נקודת האפס!`;
+                        statsGrid.style.display = 'grid';
+                        infoText.innerHTML = `הטעינה החלה ב-<strong>${initialChargeLevel}%</strong>.`;
                     } else {
-                        // המכשיר מנותק מהמטען - מאפסים את הכל
-                        badge.textContent = "🔋 בפריקה (לא מחובר)";
+                        // ניתוק המטען - ניקוי ואיפוס מוחלט
+                        badge.textContent = "🔋 לא מחובר";
                         badge.classList.remove('charging');
                         
                         initialChargeLevel = null;
+                        startTime = null;
+                        clearInterval(timerInterval);
+                        timerInterval = null;
+
                         deltaValue.style.display = 'none';
                         deltaLabel.style.display = 'none';
-                        infoText.textContent = "חבר את המטען כדי לראות את ה-Delta בלייב.";
+                        statsGrid.style.display = 'none';
+                        document.getElementById('timerVal').textContent = "00:00";
+                        document.getElementById('rateVal').textContent = "0.00";
+                        infoText.textContent = "חבר את המטען כדי להתחיל מדידה מלאה.";
                     }
                 }
 
-                // הפעלה ראשונית
                 updateUI();
 
-                // האזנה לאירועים: שינוי בסטטוס הטעינה או באחוז הסוללה
                 battery.addEventListener('chargingchange', updateUI);
                 battery.addEventListener('levelchange', updateUI);
             });
         } else {
-            document.getElementById('infoText').textContent = "הדפדפן שלך לא תומך ב-Battery API (נפוץ ב-iOS עקב הגבלות אבטחה של אפל).";
+            document.getElementById('infoText').textContent = "הדפדפן אינו תומך ב-Battery API.";
         }
     </script>
 </body>
