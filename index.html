@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Delta Charge PoC</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0d1117;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .card {
+            background-color: #161b22;
+            border: 2px solid #30363d;
+            border-radius: 24px;
+            padding: 40px 20px;
+            text-align: center;
+            width: 100%;
+            max-width: 340px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 30px;
+            background-color: #21262d;
+            color: #8b949e;
+            transition: all 0.3s ease;
+        }
+
+        .status-badge.charging {
+            background-color: rgba(35, 134, 54, 0.2);
+            color: #3fb950;
+            border: 1px solid #238636;
+        }
+
+        .current-charge {
+            font-size: 5.5rem;
+            font-weight: 800;
+            line-height: 1;
+            margin-bottom: 10px;
+        }
+
+        .delta-box {
+            min-height: 80px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .delta-value {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #3fb950;
+            display: none;
+        }
+
+        .delta-label {
+            font-size: 0.85rem;
+            color: #8b949e;
+            margin-top: 4px;
+            display: none;
+        }
+
+        .info-text {
+            font-size: 0.9rem;
+            color: #8b949e;
+            line-height: 1.4;
+            margin-top: 20px;
+            border-top: 1px solid #21262d;
+            padding-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <div id="statusBadge" class="status-badge">ממתין לנתונים...</div>
+        
+        <div class="current-charge"><span id="currentPct">--</span>%</div>
+        
+        <div class="delta-box">
+            <div id="deltaValue" class="delta-value">+0%</div>
+            <div id="deltaLabel" class="delta-label">נוספו מאז תחילת הטעינה</div>
+        </div>
+
+        <div class="info-text" id="infoText">
+            חבר את המטען כדי לראות את ה-Delta בלייב.
+        </div>
+    </div>
+
+    <script>
+        // משתנה שישמור את אחוז הסוללה ברגע המדויק של חיבור המטען
+        let initialChargeLevel = null;
+
+        if ('getBattery' in navigator) {
+            navigator.getBattery().then(function(battery) {
+                
+                // פונקציה שמעדכנת את תצוגת המסך בכל שינוי
+                function updateUI() {
+                    const currentPct = Math.round(battery.level * 100);
+                    document.getElementById('currentPct').textContent = currentPct;
+
+                    const badge = document.getElementById('statusBadge');
+                    const deltaValue = document.getElementById('deltaValue');
+                    const deltaLabel = document.getElementById('deltaLabel');
+                    const infoText = document.getElementById('infoText');
+
+                    if (battery.charging) {
+                        badge.textContent = "⚡ בטעינה";
+                        badge.classList.add('charging');
+
+                        // אם המטען הרגע חובר ועדיין לא נעלנו אחוז התחלתי
+                        if (initialChargeLevel === null) {
+                            initialChargeLevel = currentPct;
+                        }
+
+                        // חישוב ההפרש (ה-Delta)
+                        const delta = currentPct - initialChargeLevel;
+                        
+                        deltaValue.textContent = `+${delta}%`;
+                        deltaValue.style.display = 'block';
+                        deltaLabel.style.display = 'block';
+                        infoText.innerHTML = `הטעינה החלה ב-<strong>${initialChargeLevel}%</strong>.<br>נעלנו את נקודת האפס!`;
+                    } else {
+                        // המכשיר מנותק מהמטען - מאפסים את הכל
+                        badge.textContent = "🔋 בפריקה (לא מחובר)";
+                        badge.classList.remove('charging');
+                        
+                        initialChargeLevel = null;
+                        deltaValue.style.display = 'none';
+                        deltaLabel.style.display = 'none';
+                        infoText.textContent = "חבר את המטען כדי לראות את ה-Delta בלייב.";
+                    }
+                }
+
+                // הפעלה ראשונית
+                updateUI();
+
+                // האזנה לאירועים: שינוי בסטטוס הטעינה או באחוז הסוללה
+                battery.addEventListener('chargingchange', updateUI);
+                battery.addEventListener('levelchange', updateUI);
+            });
+        } else {
+            document.getElementById('infoText').textContent = "הדפדפן שלך לא תומך ב-Battery API (נפוץ ב-iOS עקב הגבלות אבטחה של אפל).";
+        }
+    </script>
+</body>
+</html>
